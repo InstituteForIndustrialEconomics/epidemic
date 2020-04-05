@@ -198,7 +198,7 @@ class EpidemicParams(object):
             mitigation_dates = np.array([x.toordinal() for x in [value[0] for value in self.mitigation_strategy]])
             mitigation_strictness = np.array([value[1] for value in self.mitigation_strategy])
             mitigation_function = interpolate.interp1d(mitigation_dates, mitigation_strictness, kind='linear')
-            self.r0_trajectory = pd.Series([mitigation_function(d.toordinal()) * average_r0 for d in self.dates],
+            self.r0_trajectory = pd.Series([mitigation_function(d.toordinal()) * self.average_r0 for d in self.dates],
                                            index=self.dates)
 
         for i in AGE_GROUPS:
