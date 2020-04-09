@@ -23,49 +23,49 @@ AGE_GROUPS = [
 
 NUM_AGE_GROUPS = len(AGE_GROUPS)
 
-age_specific_hospitalization_rates = {
-    '0-9': 0.01,
-    '10-19': 0.03,
-    '20-29': 0.03,
-    '30-39': 0.03,
-    '40-49': 0.06,
-    '50-59': 0.10,
-    '60-69': 0.25,
-    '70-79': 0.35,
-    '80+': 0.50
-}
+# age_specific_hospitalization_rates = {
+#     '0-9': 0.01,
+#     '10-19': 0.03,
+#     '20-29': 0.03,
+#     '30-39': 0.03,
+#     '40-49': 0.06,
+#     '50-59': 0.10,
+#     '60-69': 0.25,
+#     '70-79': 0.35,
+#     '80+': 0.50
+# }
 
-age_specific_icu_rates = {
-    '0-9': 0.05,
-    '10-19': 0.10,
-    '20-29': 0.10,
-    '30-39': 0.15,
-    '40-49': 0.20,
-    '50-59': 0.25,
-    '60-69': 0.35,
-    '70-79': 0.45,
-    '80+': 0.55
-}
+# age_specific_icu_rates = {
+#     '0-9': 0.05,
+#     '10-19': 0.10,
+#     '20-29': 0.10,
+#     '30-39': 0.15,
+#     '40-49': 0.20,
+#     '50-59': 0.25,
+#     '60-69': 0.35,
+#     '70-79': 0.45,
+#     '80+': 0.55
+# }
 
 # percentage of those in icu
-age_specific_fatality_rates = {
-    '0-9': 0.05,
-    '10-19': 0.10,
-    '20-29': 0.10,
-    '30-39': 0.15,
-    '40-49': 0.20,
-    '50-59': 0.25,
-    '60-69': 0.35,
-    '70-79': 0.45,
-    '80+': 0.55
-}
+# age_specific_fatality_rates = {
+#     '0-9': 0.05,
+#     '10-19': 0.10,
+#     '20-29': 0.10,
+#     '30-39': 0.15,
+#     '40-49': 0.20,
+#     '50-59': 0.25,
+#     '60-69': 0.35,
+#     '70-79': 0.45,
+#     '80+': 0.55
+# }
 
-infectious_period_days = 14.0  # FIXME: sources!
-incubation_time_days = 2.0  # FIXME: sources!
-hospital_stay_days = 8.0  # ditto
-icu_stay_days = 21.0  # ditto
-overflow_severity = 3.0  # ???
-average_r0 = 3.0
+INFECTIOUS_PERIOD_DAYS = 14.0  # FIXME: sources!
+INCUBATION_TIME_DAYS = 2.0  # FIXME: sources!
+HOSPITAL_STAY_DAYS = 8.0  # ditto
+ICU_STAY_DAYS = 21.0  # ditto
+OVERFLOW_SEVERITY = 3.0  # ???
+AVERAGE_R0 = 3.0
 
 age_specific_rates = pd.DataFrame(
     columns=[
@@ -100,6 +100,41 @@ class EpidemicState(object):
 
 
 @attr.s
+class TravelFluxByAge(object):
+    """
+    Переезжающие из региона в регион индивиды, в разбивке по возрастам
+    """
+    susceptible = attr.ib(type=np.ndarray, default=np.zeros(shape=(NUM_AGE_GROUPS,)))
+    exposed = attr.ib(type=np.ndarray, default=np.zeros(shape=(NUM_AGE_GROUPS,)))
+    # infectious = attr.ib(type=np.ndarray, default=np.zeros(shape=(NUM_AGE_GROUPS,)))
+    recovered = attr.ib(type=np.ndarray, default=np.zeros(shape=(NUM_AGE_GROUPS,)))
+
+
+@attr.s
+class TravelFlux(object):
+    """
+    Переезжающие из региона в регион индивиды - без разбивки по возрастам
+    """
+    susceptible: float = 0.0
+    exposed: float = 0.0
+    # infectious: float = 0.0
+    recovered: float = 0.0
+
+
+def convert_flux_to_flux_by_age(flux: TravelFlux,
+                                age_distribution: np.ndarray) -> TravelFluxByAge:
+
+    # age_distribution can be anything - counts or ratios, we don't care
+    ratios = age_distribution / float(np.sum(age_distribution))
+    result = TravelFluxByAge()
+    result.susceptible = flux.susceptible * ratios
+    result.exposed = flux.exposed * ratios
+    # result.infectious = flux.infectious * ratios
+    result.recovered = flux.recovered * ratios
+    return result
+
+
+@attr.s
 class EpidemicParams(object):
     """
     Параметры модифицированной SEIR модели эпидемии
@@ -130,47 +165,58 @@ class EpidemicParams(object):
     """
     Совокупная вероятность госпитализации для зараженного индивида
     """
-    hospitalization_probabilities: Dict[str, float] = {
-        '0-9':   0.01,
-        '10-19': 0.03,
-        '20-29': 0.03,
-        '30-39': 0.03,
-        '40-49': 0.06,
-        '50-59': 0.10,
-        '60-69': 0.25,
-        '70-79': 0.35,
-        '80+':   0.50
-    }
+    hospitalization_probabilities = attr.ib(
+        type=Dict[str, float],
+        default={
+            '0-9':   0.01,
+            '10-19': 0.03,
+            '20-29': 0.03,
+            '30-39': 0.03,
+            '40-49': 0.06,
+            '50-59': 0.10,
+            '60-69': 0.25,
+            '70-79': 0.35,
+            '80+':   0.50
+        },
+        kw_only=True)
 
     """
     Совокупная вероятность перехода из стационара в реанимацию
     """
-    icu_probabilities: Dict[str, float] = {
-        '0-9':   0.05,
-        '10-19': 0.10,
-        '20-29': 0.10,
-        '30-39': 0.15,
-        '40-49': 0.20,
-        '50-59': 0.25,
-        '60-69': 0.35,
-        '70-79': 0.45,
-        '80+':   0.55
-    }
+    icu_probabilities = attr.ib(
+        type=Dict[str, float],
+        default={
+            '0-9':   0.05,
+            '10-19': 0.10,
+            '20-29': 0.10,
+            '30-39': 0.15,
+            '40-49': 0.20,
+            '50-59': 0.25,
+            '60-69': 0.35,
+            '70-79': 0.45,
+            '80+':   0.55
+        },
+        kw_only=True
+    )
 
     """
     Совокупная вероятность смерти для пациентов, нуждающихся в реанимации
     """
-    fatality_probabilities: Dict[str, float] = {
-        '0-9':   0.05,
-        '10-19': 0.10,
-        '20-29': 0.10,
-        '30-39': 0.15,
-        '40-49': 0.20,
-        '50-59': 0.25,
-        '60-69': 0.35,
-        '70-79': 0.45,
-        '80+':   0.55
-    }
+    fatality_probabilities = attr.ib(
+        type=Dict[str, float],
+        default={
+            '0-9':   0.05,
+            '10-19': 0.10,
+            '20-29': 0.10,
+            '30-39': 0.15,
+            '40-49': 0.20,
+            '50-59': 0.25,
+            '60-69': 0.35,
+            '70-79': 0.45,
+            '80+':   0.55
+        },
+        kw_only=True
+    )
 
     regions: List[str] = ['Россия']
 
