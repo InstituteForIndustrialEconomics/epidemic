@@ -95,6 +95,7 @@ def evolve(params: EpidemicParams,
         + old.overflow + old.recovered
     population = np.sum(population_by_age)
 
+    infection_rate_per_day = r0 / params.infectious_period_days
     frac_infected = np.sum(old.infectious) / population
     imported = np.round(imported_cases * (population_by_age / population))
     new_critical_d = np.zeros(shape=(NUM_AGE_GROUPS,))
@@ -117,7 +118,7 @@ def evolve(params: EpidemicParams,
         prev_recovered = old.recovered[i]
         prev_discharged = old.discharged[i]
         prev_dead = old.dead[i]
-        new_cases = ceil(float(imported[i]) + r0 * float(prev_susceptible) * frac_infected)
+        new_cases = ceil(float(imported[i]) + infection_rate_per_day * float(prev_susceptible) * frac_infected)
         new_infectious = min(prev_exposed, ceil(float(prev_exposed) / float(params.incubation_time_days)))
 
         # Выздоровление без госпитализации
