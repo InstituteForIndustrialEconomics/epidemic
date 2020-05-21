@@ -2,6 +2,7 @@ from epidemic_params import *
 
 import numpy as np
 import pandas as pd
+import datetime
 # from scipy import interpolate
 from matplotlib import pyplot as plt
 from math import ceil, inf
@@ -15,15 +16,20 @@ from regions import regions  # as original_regions
 
 from regions import regional_age_distribution, \
     regional_population, \
-    regional_ventilators, imports_5x, imports_raw, passenger_flows_tutu
+    regional_ventilators, \
+    imports_raw, passenger_flows_tutu
+    # imports_5x, \
+
 
 pd.set_option('display.expand_frame_repr', False)
 
-SIMULATION_START_DATE = date(2020, 1, 1)
-DAYS_TO_SIMULATE = 366
+SIMULATION_START_DATE = date(2020, 3, 1)
+DAYS_TO_SIMULATE = 58
 
-dates = pd.date_range(SIMULATION_START_DATE, periods=DAYS_TO_SIMULATE)
-
+# Filippov> Период должен включать все даты, встречающиеся в определениях regions
+dates = pd.date_range(min(date(2020, 1, 1), SIMULATION_START_DATE), end = max(date(2020, 5, 31), SIMULATION_START_DATE + datetime.timedelta(days = DAYS_TO_SIMULATE)), freq = 'D')
+# Filippov> Для Москвы привезенные случаи учитывам только до 15.03.2020
+imports_raw['Москва'] = [(date(2020, 3, 6), 5), (date(2020, 3, 8), 1), (date(2020, 3, 9), 3), (date(2020, 3, 11), 6), (date(2020, 3, 12), 4), (date(2020, 3, 13), 5), (date(2020, 3, 14), 9)]
 
 @dataclass
 class SimulationResults:
@@ -118,6 +124,7 @@ def evolve(params: EpidemicParams,
         prev_recovered = old.recovered[i]
         prev_discharged = old.discharged[i]
         prev_dead = old.dead[i]
+        # FIXME: bug spotted by DVF
         new_cases = ceil(float(imported[i]) + infection_rate_per_day * float(prev_susceptible) * frac_infected)
         new_infectious = min(prev_exposed, ceil(float(prev_exposed) / float(params.incubation_time_days)))
 
@@ -394,12 +401,12 @@ def simulate_region2(region: str,
                              (date(2020, 1, 28), 0.95),
                              (date(2020, 3, 3), 0.94),
                              (date(2020, 3, 17), 0.5),
-                             (date(2020, 4, 1), 0.1),
-                             (date(2020, 4, 6), 0.05),
+                             (date(2020, 4, 1), 0.4),
+                             (date(2020, 4, 6), 0.3),
                              # (date(2020, 6, 7), 0.5),
-                             (date(2020, 12, 31), 0.05)
+                             (date(2020, 12, 31), 0.3)
                              # (date(2020, 12, 31), 0.5)
-                            ], overflow_severity=2.0)):
+                            ], overflow_severity=3.0)):
     pop = np.multiply(regional_age_distribution[region], regional_population[region])
     sim, m_o_d, m_o, m_i_d, m_i, m_s = simulate_path_with_maxima(
         params=params,
@@ -432,20 +439,70 @@ def simulate_region2(region: str,
                              r0_trajectory=params.r0_trajectory,
                              simulation_dates=params.dates)
 
+def simulate_region_Moscow(
+        region: str,
+        params: EpidemicParams = EpidemicParams(
+            mitigation_strategy=[
+                (SIMULATION_START_DATE, 1.0),
+                (date(2020, 3, 15), 1),
+                (date(2020, 4, 1), 0.8),
+                (date(2020, 4, 15), 0.5),
+                (date(2020, 12, 31), 0.1)
+            ],
+            overflow_severity = 2.0, simulation_start_date = SIMULATION_START_DATE, simulation_days = DAYS_TO_SIMULATE,
+            average_r0 = 6.3)):
+    #
+    pop = np.multiply(regional_age_distribution[region], regional_population[region])
+    sim, m_o_d, m_o, m_i_d, m_i, m_s = simulate_path_with_maxima(
+        params=params,
+        icu_beds=regional_ventilators[region],
+        imported_cases=regional_imports[region],
+        initial_population=pop)
+    plt.scatter(params.dates, sim.Dead)
+    plt.title(f'{region}: {str(int(sim.Dead[-1]))} погибших')
+    plt.show()
+    plt.scatter(params.dates, sim.Overflow)
+    plt.title(f'{region}: не попало в реанимацию')
+    plt.show()
+    #
+    Real_Inf = pd.read_csv('Moscow.csv', delimiter='\\t', parse_dates=['date'], index_col=['date'], engine='python').sort_index()
+    print(len(Real_Inf))
+    print(Real_Inf)
+    plt.scatter(params.dates, sim.Infectious)
+    plt.scatter(params.dates, Real_Inf)
+    plt.title(f'{region}: число вирулентных (R0=' + str(params.average_r0) + ')')
+    # plt.yscale('log')
+    plt.show()
+    #
+    plt.scatter(params.dates, params.r0_trajectory)
+    plt.title(f'{region}: траектория $R_0$')
+    plt.show()
+    print(f'{region}: {str(int(sim.Dead[-1]))} погибших')
+    print(f'Максимальное число вирулентных {m_i} на дату: {str(m_i_d)}')
+    print(f'Максимальное число не попавших в реанимацию {m_o} на дату: {str(m_o_d)}')
+    print(f'Не заболевших {m_s}')
+    return SimulationResults(summary_results=sim,
+                             max_overflow_date=m_o_d,
+                             max_overflow=m_o,
+                             max_infectious=m_i,
+                             max_infectious_date=m_i_d,
+                             min_susceptible=m_s,
+                             r0_trajectory=params.r0_trajectory,
+                             simulation_dates=params.dates)
 
 def main():
     # simulate_region('Адыгея')
-    simulate_region2('Москва')
+    simulate_region_Moscow('Москва')
     # simulate_region('Костромская область')
-    passenger_flow_graph = nx.graph.Graph()
-    # G.add_nodes_from(regions)
-    passenger_flow_graph.add_weighted_edges_from([(z[0], z[1], z[2]/30.0) for z in passenger_flows_tutu])
-    pos = nx.spring_layout(passenger_flow_graph)
-    nx.draw(passenger_flow_graph, pos=pos)
-    nx.draw_networkx_labels(passenger_flow_graph, pos=pos)
-    # edge_labels = nx.draw_networkx_edge_labels(passenger_flow_graph, pos=nx.spring_layout(passenger_flow_graph))
-    plt.draw()
-    plt.show()
+    # passenger_flow_graph = nx.graph.Graph()
+    # # G.add_nodes_from(regions)
+    # passenger_flow_graph.add_weighted_edges_from([(z[0], z[1], z[2]/30.0) for z in passenger_flows_tutu])
+    # pos = nx.spring_layout(passenger_flow_graph)
+    # nx.draw(passenger_flow_graph, pos=pos)
+    # nx.draw_networkx_labels(passenger_flow_graph, pos=pos)
+    # # edge_labels = nx.draw_networkx_edge_labels(passenger_flow_graph, pos=nx.spring_layout(passenger_flow_graph))
+    # plt.draw()
+    # plt.show()
 
 
 if __name__ == '__main__':
