@@ -65,7 +65,7 @@ INCUBATION_TIME_DAYS = 2.0  # FIXME: sources!
 HOSPITAL_STAY_DAYS = 8.0  # ditto
 ICU_STAY_DAYS = 21.0  # ditto
 OVERFLOW_SEVERITY = 3.0  # ???
-AVERAGE_R0 = 3.0
+AVERAGE_R0 = 6.30
 
 age_specific_rates = pd.DataFrame(
     columns=[
